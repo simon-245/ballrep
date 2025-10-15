@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>🎯 1 vs 1 Projectile Duel</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background: #eef; }
+  canvas { border: 1px solid #333; background: #fff; margin-top: 10px; }
+  input, button { margin: 5px; font-size: 16px; }
+  #dataBox { background: #dde; display: inline-block; padding: 8px 15px; border-radius: 10px; margin-top: 5px; }
+  #controls { margin-top:10px; }
+  .active { font-weight:bold; color:green; }
+</style>
+</head>
+<body>
+
+<h2>🎯 1 vs 1 Projectile Duel</h2>
+
+<div id="joinSection">
+  Player 1: <input id="name1" placeholder="Enter name"> <button id="join1">Join</button><br>
+  Player 2: <input id="name2" placeholder="Enter name"> <button id="join2">Join</button>
+</div>
+
+<div id="controls" style="display:none">
+  <p id="turnInfo"></p>
+  Angle: <input type="number" id="angle" value="45"> 
+  Speed: <input type="number" id="speed" value="30"> 
+  <button id="throwBtn">Throw!</button>
+</div>
+
+<p id="scoreInfo"></p>
+
+<div id="dataBox" style="display:none">
+  <p><b>Projectile Data:</b></p>
+  <div id="physicsData"></div>
+</div>
+
+<canvas id="gameCanvas" width="600" height="300"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const g = 9.81, scale = 5, groundY = 250, targetRadius = 15;
+let player1="", player2="", currentPlayer="", scores={};
+let targetX = 500; // initial target position
+
+// DOM elements
+const name1Input = document.getElementById("name1");
+const name2Input = document.getElementById("name2");
+const join1Btn = document.getElementById("join1");
+const join2Btn = document.getElementById("join2");
+const controls = document.getElementById("controls");
+const throwBtn = document.getElementById("throwBtn");
+const angleInput = document.getElementById("angle");
+const speedInput = document.getElementById("speed");
+const turnInfo = document.getElementById("turnInfo");
+const scoreInfo = document.getElementById("scoreInfo");
+const dataBox = document.getElementById("dataBox");
+const physicsData = document.getElementById("physicsData");
+
+// Draw base and target
+function drawBase(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#000";
+  ctx.fillRect(0,groundY,canvas.width,2);
+  ctx.beginPath();
+  ctx.arc(targetX,groundY-targetRadius,targetRadius,0,Math.PI*2);
+  ctx.strokeStyle="blue";
+  ctx.lineWidth=3;
+  ctx.stroke();
+}
+
+// Draw trajectory preview
+function drawTrajectory(angle,speed){
+  drawBase();
+  if(currentPlayer !== player1 && currentPlayer !== player2) return;
+  const angleRad = angle*Math.PI/180;
+  ctx.beginPath();
+  ctx.setLineDash([4,4]);
+  ctx.strokeStyle="gray";
+  const startX=50,startY=groundY;
+  let first=true;
+  for(let t=0;t<10;t+=0.05){
+    const x=speed*Math.cos(angleRad)*t;
+    const y=speed*Math.sin(angleRad)*t-0.5*g*t*t;
+    if(y<0) break;
+    const screenX=startX+x*scale;
+    const screenY=startY-y*scale;
+    if(first){ctx.moveTo(screenX,screenY);first=false;} else ctx.lineTo(screenX,screenY);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const tFlight = (2*speed*Math.sin(angleRad))/g;
+  const hMax = (speed**2*Math.sin(angleRad)**2)/(2*g);
+  const range = (speed**2*Math.sin(2*angleRad))/g;
+  physicsData.innerHTML=`⏱️ Flight Time: ${tFlight.toFixed(2)} s<br>🏔️ Max Height: ${hMax.toFixed(2)} m<br>📏 Range: ${range.toFixed(2)} m`;
+  dataBox.style.display="block";
+}
+
+// Draw projectile animation
+function drawProjectile(angle,speed){
+  const angleRad = angle*Math.PI/180;
+  let t=0;
+  const startX=50,startY=groundY;
+  controls.style.display = "none"; // disable controls during flight
+  function step(){
+    t+=0.05;
+    const x=speed*Math.cos(angleRad)*t;
+    const y=speed*Math.sin(angleRad)*t-0.5*g*t*t;
+    const screenX=startX+x*scale;
+    const screenY=startY-y*scale;
+    drawBase();
+    ctx.beginPath();
+    ctx.arc(screenX,screenY,5,0,Math.PI*2);
+    ctx.fillStyle="red";
+    ctx.fill();
+    if(screenY<groundY && screenX<canvas.width) requestAnimationFrame(step);
+    else{
+      const hit = Math.abs(screenX - targetX) < targetRadius*2;
+      ctx.fillStyle = hit?"green":"black";
+      ctx.fillText(hit?"🎯 HIT!":"MISS", screenX, groundY-10);
+
+      if(hit) scores[currentPlayer] = (scores[currentPlayer] || 0) + 1;
+
+      // Show message for current player
+      turnInfo.innerHTML = hit ? `🎯 ${currentPlayer} hit the target!` : `💨 ${currentPlayer} missed!`;
+
+      // Delay so player sees message, then move target and switch turn
+      setTimeout(()=>{
+        // Move target BEFORE switching turn
+        const minX = 300, maxX = 550;
+        targetX = Math.floor(Math.random()*(maxX-minX))+minX;
+
+        // Redraw canvas so next player sees new target
+        drawBase();
+
+        // Switch turn
+        currentPlayer = (currentPlayer===player1) ? player2 : player1;
+
+        // Update UI and enable controls
+        updateUI();
+        controls.style.display = "block";
+      }, 1000); // 1-second message display
+    }
+  }
+  step();
+}
+
+// Update UI
+function updateUI(){
+  if(!player1) turnInfo.textContent="Waiting for player 1...";
+  else if(player1 && !player2) turnInfo.textContent=`Player 1 (${player1}) joined. Waiting for player 2...`;
+  else {
+    turnInfo.innerHTML = (currentPlayer===player1) ? `<span class="active">🎮 ${player1}'s turn!</span>` 
+                                                    : `<span class="active">🎮 ${player2}'s turn!</span>`;
+    controls.style.display = "block";
+  }
+  scoreInfo.textContent=`🏆 ${player1||"?"}: ${scores[player1]||0} | ${player2||"?"}: ${scores[player2]||0}`;
+}
+
+// Join buttons
+join1Btn.onclick = () => {
+  if(!name1Input.value.trim()) return alert("Enter Player 1 name");
+  player1 = name1Input.value.trim();
+  join1Btn.disabled = true; name1Input.disabled = true;
+  if(player2 && !currentPlayer) { 
+    currentPlayer = player1;
+    controls.style.display = "block";
+  }
+  updateUI();
+};
+
+join2Btn.onclick = () => {
+  if(!name2Input.value.trim()) return alert("Enter Player 2 name");
+  if(!player1) return alert("Player 1 must join first");
+  player2 = name2Input.value.trim();
+  join2Btn.disabled = true; name2Input.disabled = true;
+  if(!currentPlayer) { 
+    currentPlayer = player1;
+    controls.style.display = "block";
+  }
+  updateUI();
+};
+
+// Throw button
+throwBtn.onclick = () => {
+  if(currentPlayer!==player1 && currentPlayer!==player2) return;
+  const angle = parseFloat(angleInput.value);
+  const speed = parseFloat(speedInput.value);
+  drawProjectile(angle,speed);
+};
+
+// Trajectory preview
+[angleInput,speedInput].forEach(el=>{
+  el.addEventListener("input",()=>{ drawTrajectory(+angleInput.value,+speedInput.value); });
+});
+
+// Initial draw
+drawBase();
+updateUI();
+</script>
+</body>
+</html>
